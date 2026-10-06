@@ -388,6 +388,10 @@ const EVENT_RE = /^(.+?)\s+(\d+)\s+resource\(s\)\s+(\d+)\s+booking\(s\)/i;
 /* "Occurs every Sunday effective 09/13/2026 until 11/29/2026 from 5:15 PM to 7:30 PM." */
 const OCCURS_RE = /Occurs\s+(.+?)\s+effective\s+(\d{1,2})\/(\d{1,2})\/(\d{4})\s+until\s+(\d{1,2})\/(\d{1,2})\/(\d{4})\s+from\s+(\d{1,2}):(\d{2})\s*([AP]M)\s+to\s+(\d{1,2}):(\d{2})\s*([AP]M)/i;
 const DATE_G = /[A-Za-z]{3},\s*([A-Za-z]{3})\s+(\d{1,2}),\s*(\d{4})/g;
+/* "Occurs on selected dates effective 11/09/2026 until 11/16/2026." The permit gives the first and last
+   date but does not list the dates in between. */
+const SELECTED_RE = /Occurs\s+on\s+selected\s+dates?\b/i;
+const RANGE_RE = /effective\s+(\d{1,2})\/(\d{1,2})\/(\d{4})\s+until\s+(\d{1,2})\/(\d{1,2})\/(\d{4})/i;
 
 /* Reads the wording after "Occurs", e.g.
      every Sunday | every Monday, Wednesday | every Monday through Friday | every weekday
@@ -435,6 +439,7 @@ function recurrenceFrom(pattern, firstYmd) {
 
 /* Every date a recurring series lands on, minus its exception dates */
 function expandSeries(s) {
+  if (s.selected) return [...new Set([s.first, s.last])].filter(d => !s.exceptions.has(d));
   const out = [];
   const first = utcOf(s.first), last = utcOf(s.last);
   const weekZero = first - new Date(first).getUTCDay() * DAY_MS;   // Sunday of the first week
@@ -492,6 +497,24 @@ function parsePermitLines(lines) {
     /* a new event */
     if ((m = line.match(EVENT_RE))) { startEvent(m[1].trim(), +m[3]); return; }
 
+    /* "on selected dates": only the first and last date are known */
+    if (SELECTED_RE.test(line)) {
+      if (!ev || !resource) { out.notes.push(`A repeating booking was found outside any field heading: ${line}`); return; }
+      const row = pendingSeries || {};
+      const r = line.match(RANGE_RE);
+      const first = r ? isoDate(r[3], +r[1], +r[2]) : row.first;
+      const last = r ? isoDate(r[6], +r[4], +r[5]) : row.last;
+      if (!first || !last || !row.start || !row.end) {
+        out.notes.push(`A booking on selected dates could not be read: ${line}`);
+        return;
+      }
+      lastSeries = { selected: true, resource, venue, first, last, start: row.start, end: row.end, exceptions: new Set(), pattern: 'on selected dates' };
+      ev.series.push(lastSeries);
+      ev.selected = true;
+      pendingSeries = null;
+      return;
+    }
+
     /* the recurrence rule that follows a "--" row */
     if ((m = line.match(OCCURS_RE))) {
       if (!ev || !resource) { out.notes.push(`A repeating booking was found outside any field heading: ${line}`); return; }
@@ -520,7 +543,11 @@ function parsePermitLines(lines) {
       if (!ev || !resource) { out.notes.push(`A booking appeared before any event or field heading: ${line}`); return; }
       const [, mo1, d1, y1, h1, mi1, ap1, mo2, d2, y2, h2, mi2, ap2, attendee] = m;
       if (attendee === '--') {                    // summary row for a repeating series
-        pendingSeries = { resource, venue };
+        pendingSeries = {
+          resource, venue,
+          first: isoDate(y1, monthNum(mo1), +d1), last: isoDate(y2, monthNum(mo2), +d2),
+          start: to24(h1, mi1, ap1), end: to24(h2, mi2, ap2)
+        };
         lastSeries = null;
         return;
       }
@@ -552,9 +579,11 @@ function parsePermitLines(lines) {
     e.found = e.units.length;
     e.notes = e.warn || [];
     if (e.expected !== e.found) {
-      e.notes.push(`The permit says "${e.name}" has ${e.expected} booking${e.expected === 1 ? '' : 's'}, but ${e.found} ${e.found === 1 ? 'was' : 'were'} found. Compare this event with the PDF.`);
+      e.notes.push(`The permit says "${e.name}" has ${e.expected} booking${e.expected === 1 ? '' : 's'}, but ${e.found} ${e.found === 1 ? 'was' : 'were'} found.` +
+        (e.selected ? ' Part of this event repeats "on selected dates", and the permit does not list which dates, so only the first and last date of that range are shown.' : '') +
+        ' Compare this event with the PDF.');
     }
-    delete e.series; delete e.warn;
+    delete e.series; delete e.warn; delete e.selected;
   });
   out.events = out.events.filter(e => e.units.length || e.expected);
   return out;
