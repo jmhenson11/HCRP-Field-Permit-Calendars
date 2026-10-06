@@ -389,19 +389,48 @@ const EVENT_RE = /^(.+?)\s+(\d+)\s+resource\(s\)\s+(\d+)\s+booking\(s\)/i;
 const OCCURS_RE = /Occurs\s+(.+?)\s+effective\s+(\d{1,2})\/(\d{1,2})\/(\d{4})\s+until\s+(\d{1,2})\/(\d{1,2})\/(\d{4})\s+from\s+(\d{1,2}):(\d{2})\s*([AP]M)\s+to\s+(\d{1,2}):(\d{2})\s*([AP]M)/i;
 const DATE_G = /[A-Za-z]{3},\s*([A-Za-z]{3})\s+(\d{1,2}),\s*(\d{4})/g;
 
-/* Which weekdays does "every Sunday" / "every Monday, Wednesday" / "every day" mean? */
-function weekdaysFrom(pattern) {
+/* Reads the wording after "Occurs", e.g.
+     every Sunday | every Monday, Wednesday | every Monday through Friday | every weekday
+     every weekend | every day | daily | every 3 days | every other day | every 2 weeks | weekly
+   Returns which weekdays count, how many weeks to skip between them, and how many days to step
+   when the pattern is "every N days". recognized=false means the wording was not understood. */
+const DOW_ABBR = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+function recurrenceFrom(pattern, firstYmd) {
+  const p = String(pattern);
   const days = new Set();
+  let weekInterval = 1, dayStep = 1, recognized = true;
+  const firstDow = new Date(utcOf(firstYmd)).getUTCDay();
+  const all = () => { for (let i = 0; i < 7; i++) days.add(i); };
+
+  /* "Monday through Friday", "Mon-Fri": every weekday from the first named to the second, wrapping past Saturday */
+  const range = p.match(/\b(sun|mon|tue|wed|thu|fri|sat)[a-z]*\s*(?:through|thru|to|-|\u2013)\s*(sun|mon|tue|wed|thu|fri|sat)[a-z]*\b/i);
+  if (range) {
+    let i = DOW_ABBR.indexOf(range[1].toLowerCase());
+    const end = DOW_ABBR.indexOf(range[2].toLowerCase());
+    for (let n = 0; n < 7; n++, i = (i + 1) % 7) { days.add(i); if (i === end) break; }
+  }
+  /* named days: "every Monday, Wednesday and Friday" */
   WEEKDAYS.forEach((full, i) => {
-    if (new RegExp('\\b(?:' + full + '|' + full.slice(0, 3) + ')s?\\b', 'i').test(pattern)) days.add(i);
+    if (new RegExp('\\b(?:' + full + '|' + full.slice(0, 3) + ')s?\\b', 'i').test(p)) days.add(i);
   });
-  if (!days.size && /\b(day|daily)\b/i.test(pattern)) for (let i = 0; i < 7; i++) days.add(i);
-  return days;
-}
-function intervalFrom(pattern) {
-  if (/every\s+(?:other|second|2nd)\b/i.test(pattern)) return 2;
-  const m = pattern.match(/every\s+(\d+)\s*(?:weeks?|wks?)/i);
-  return m ? Math.max(1, +m[1]) : 1;
+
+  const everyNDays = p.match(/every\s+(\d+)\s*days?\b/i);
+  if (/every\s+(?:other|second|2nd)\s+day\b/i.test(p)) dayStep = 2;
+  else if (everyNDays) dayStep = Math.max(1, +everyNDays[1]);
+
+  if (dayStep === 1) {          // "every other Saturday" / "every other week" / "every 2 weeks" (but not "every other day")
+    if (/every\s+(?:other|second|2nd)\b/i.test(p)) weekInterval = 2;
+    else { const w = p.match(/every\s+(\d+)\s*(?:weeks?|wks?)\b/i); if (w) weekInterval = Math.max(1, +w[1]); }
+  }
+
+  if (!days.size) {
+    if (/\bweekdays?\b/i.test(p)) [1, 2, 3, 4, 5].forEach(d => days.add(d));
+    else if (/\bweekends?\b/i.test(p)) [0, 6].forEach(d => days.add(d));
+    else if (dayStep > 1 || /\b(?:daily|everyday|every\s*day|each\s+day)\b/i.test(p)) all();
+    else if (weekInterval > 1 || /\bweekly\b/i.test(p) || /every\s+week\b/i.test(p)) days.add(firstDow);  // same weekday as the start
+    else { days.add(firstDow); recognized = false; }
+  }
+  return { days, weekInterval, dayStep, recognized };
 }
 
 /* Every date a recurring series lands on, minus its exception dates */
@@ -411,6 +440,7 @@ function expandSeries(s) {
   const weekZero = first - new Date(first).getUTCDay() * DAY_MS;   // Sunday of the first week
   for (let t = first; t <= last; t += DAY_MS) {
     if (!s.days.has(new Date(t).getUTCDay())) continue;
+    if (s.dayStep > 1 && Math.round((t - first) / DAY_MS) % s.dayStep) continue;
     if (Math.floor((t - weekZero) / (7 * DAY_MS)) % s.interval) continue;
     const ymd = ymdOf(t);
     if (s.exceptions.has(ymd)) continue;
@@ -467,13 +497,13 @@ function parsePermitLines(lines) {
       if (!ev || !resource) { out.notes.push(`A repeating booking was found outside any field heading: ${line}`); return; }
       const [, pattern, m1, d1, y1, m2, d2, y2, h1, mi1, ap1, h2, mi2, ap2] = m;
       const first = isoDate(y1, +m1, +d1), last = isoDate(y2, +m2, +d2);
-      let days = weekdaysFrom(pattern);
-      if (!days.size) {
-        days = new Set([new Date(utcOf(first)).getUTCDay()]);
-        ev.warn = (ev.warn || []).concat(`Repeat pattern "${pattern}" was not recognized, so weekly on ${WEEKDAYS[[...days][0]]}s was assumed`);
+      const rec = recurrenceFrom(pattern, first);
+      if (!rec.recognized) {
+        const dow = WEEKDAYS[[...rec.days][0]];
+        ev.warn = (ev.warn || []).concat(`Repeat pattern "${pattern}" was not recognized, so weekly on ${dow[0].toUpperCase() + dow.slice(1)}s was assumed`);
       }
       lastSeries = {
-        resource, venue, first, last, days, interval: intervalFrom(pattern),
+        resource, venue, first, last, days: rec.days, interval: rec.weekInterval, dayStep: rec.dayStep,
         start: to24(h1, mi1, ap1), end: to24(h2, mi2, ap2), exceptions: new Set(), pattern
       };
       ev.series.push(lastSeries);
