@@ -282,8 +282,8 @@ fieldset.pg legend .src{font-weight:400;color:var(--muted);margin-left:.35rem}
             <div class="field">
               <label for="fmtSel">Time format</label>
               <select id="fmtSel">
-                <option value="24" selected>24-hour (17:15)</option>
-                <option value="12">12-hour (5:15 PM)</option>
+                <option value="12" selected>12-hour (5:15 PM)</option>
+                <option value="24">24-hour (17:15)</option>
               </select>
             </div>
             <div class="field">
@@ -1481,7 +1481,7 @@ const state = {
   location: '',            // '' = all fields
   month: '',               // 'YYYY-MM'
   view: 'calendar',
-  fmt: '24',
+  fmt: '12',                // default time format; the menu offers 24-hour too
   uploadNotes: [],
   seq: 0
 };
