@@ -3,26 +3,45 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Field permit calendar</title>
+<title>Field Permit Calendar Conversion Tool</title>
+<meta name="color-scheme" content="light dark">
+<script>
+/* Choose light or dark before the page is drawn: the person's saved choice, otherwise their device setting */
+(function () {
+  var t = null;
+  try { t = localStorage.getItem('fpc-theme'); } catch (e) {}
+  if (t !== 'dark' && t !== 'light') t = window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  document.documentElement.setAttribute('data-theme', t);
+})();
+</script>
 <style>
 :root{
-  --ink:#14232A;
-  --muted:#44555B;
+  /* HCRP brand: primary #024860, secondary #ACD03A. Every pairing below is checked by tools/contrast.py. */
+  color-scheme:light;
+  --ink:#102A33;
+  --muted:#43575E;
   --paper:#FFFFFF;
-  --wash:#F1F5F2;
-  --brand:#14532D;
-  --brand-hover:#0E3D21;
-  --edge:#6B7C80;          /* borders of controls: 4.3:1 on white */
-  --line:#C9D3CF;          /* decorative dividers only */
-  --focus:#0B57D0;
+  --wash:#EDF3F5;
+  --brand:#024860;          /* header, table headers */
+  --on-brand:#FFFFFF;
+  --lede:#D7E8EE;           /* intro text on the header */
+  --accent:#ACD03A;         /* decorative stripes only: too light for text on white */
+  --primary:#024860;        /* main buttons and selected toggles */
+  --primary-hover:#013244;
+  --on-primary:#FFFFFF;
+  --today:#024860;
+  --edge:#677C83;           /* borders of controls: 3:1 or more on paper and wash */
+  --line:#C6D4D8;           /* decorative dividers only */
+  --focus:#024860;
+  --focus-on-brand:#ACD03A;
+  --drop-over:#DDECF1;
+  --disabled-ink:#5B6E74; --disabled-edge:#B7C6CB;
   --warn-bg:#FFF4D6; --warn-edge:#8A5B00; --warn-ink:#4A3200;
   --err-bg:#FDE9E7;  --err-edge:#B3261E;  --err-ink:#7A1410;
   --radius:6px;
   --font:"Segoe UI",system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;
 }
-
-/* event colors: --c is the strong color (borders, markers), --t the pale fill.
-   Every pair is >= 4.5:1 (strong on white) and text on --t is >= 13:1. */
+/* event colors: --c is the strong color (bars, markers), --t the box fill */
 .c0{--c:#1D4FA3;--t:#E4EDFB}
 .c1{--c:#A8450A;--t:#FDEBDD}
 .c2{--c:#1E6B3A;--t:#E0F3E6}
@@ -33,6 +52,38 @@
 .c7{--c:#3E4C59;--t:#E6EAEE}
 .c8{--c:#4F6B0A;--t:#EBF3D2}
 .c9{--c:#B3261E;--t:#FDE4E2}
+/* dark mode: screens only, so anything printed from the page stays light */
+@media screen{
+  :root[data-theme="dark"]{
+    color-scheme:dark;
+    --ink:#E4EEF1;
+    --muted:#A7BCC3;
+    --paper:#0D1D23;
+    --wash:#152B33;
+    --lede:#D7E8EE;
+    --primary:#ACD03A;        /* the lime reads well on dark, so it leads here */
+    --primary-hover:#C1DE69;
+    --on-primary:#0D1D23;
+    --today:#ACD03A;
+    --edge:#7D959C;
+    --line:#2C4650;
+    --focus:#ACD03A;
+    --drop-over:#1C3A45;
+    --disabled-ink:#8A9FA6; --disabled-edge:#3E5961;
+    --warn-bg:#33290F; --warn-edge:#D9A93A; --warn-ink:#F6E6B8;
+    --err-bg:#3B1714;  --err-edge:#F28C84;  --err-ink:#FCD6D2;
+  }
+  [data-theme="dark"] .c0{--c:#8DB0F2;--t:#18304F}
+  [data-theme="dark"] .c1{--c:#F4A974;--t:#43281A}
+  [data-theme="dark"] .c2{--c:#79D49A;--t:#183B27}
+  [data-theme="dark"] .c3{--c:#C9A6EE;--t:#33254A}
+  [data-theme="dark"] .c4{--c:#63D2D6;--t:#103A3E}
+  [data-theme="dark"] .c5{--c:#F48DB7;--t:#46192F}
+  [data-theme="dark"] .c6{--c:#E6C866;--t:#3B3113}
+  [data-theme="dark"] .c7{--c:#AEBDCA;--t:#283642}
+  [data-theme="dark"] .c8{--c:#B9D873;--t:#2B3814}
+  [data-theme="dark"] .c9{--c:#F5958D;--t:#47201D}
+}
 
 *,*::before,*::after{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
@@ -40,7 +91,7 @@ body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--font);f
 h1,h2,h3{line-height:1.2;margin:0}
 p{margin:0}
 :focus{outline:none}
-:focus-visible{outline:3px solid var(--focus);outline-offset:2px;box-shadow:0 0 0 2px #fff}
+:focus-visible{outline:3px solid var(--focus);outline-offset:2px;box-shadow:0 0 0 2px var(--paper)}
 [tabindex="-1"]:focus{outline:none;box-shadow:none}
 
 .vh{position:absolute!important;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap;border:0}
@@ -52,19 +103,30 @@ p{margin:0}
 .skip:focus{top:.5rem}
 
 /* ---------- header ---------- */
-.top{background:var(--brand);color:#fff;padding:1.5rem 0 1.25rem;position:relative}
-.top::after{content:"";position:absolute;left:0;right:0;bottom:6px;height:2px;background:rgba(255,255,255,.55)}   /* chalk touchline */
+.top{background:var(--brand);color:var(--on-brand);padding:1.5rem 0 1.6rem;position:relative;border-bottom:6px solid var(--accent)}
+.top .wrap{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:1rem 1.5rem}
 .top h1{font-size:clamp(1.5rem,1.2rem + 1.5vw,2.25rem);font-weight:700;letter-spacing:-.01em}
-.top .lede{color:#E3EFE8;margin-top:.35rem;max-width:62ch}
+.top .lede{color:var(--lede);margin-top:.4rem;max-width:62ch}
+.top :focus-visible{outline-color:var(--focus-on-brand);box-shadow:none}
+
+/* dark mode switch: the knob's position shows the state, not only its color */
+.theme{display:inline-flex;align-items:center;gap:.6rem;flex:none;font:inherit;font-weight:600;min-height:2.75rem;padding:.4rem .9rem;
+  color:var(--on-brand);background:transparent;border:2px solid var(--lede);border-radius:999px;cursor:pointer}
+.theme:hover{background:rgba(255,255,255,.12)}
+.theme .track{position:relative;width:2.6rem;height:1.4rem;border-radius:999px;border:2px solid var(--lede);flex:none}
+.theme .knob{position:absolute;top:.15rem;left:.15rem;width:.9rem;height:.9rem;border-radius:50%;background:var(--lede);transition:transform .15s}
+.theme[aria-pressed="true"] .track{background:var(--accent);border-color:var(--accent)}
+.theme[aria-pressed="true"] .knob{transform:translateX(1.2rem);background:var(--brand)}
+@media (prefers-reduced-motion:reduce){.theme .knob{transition:none}}
 main.wrap{padding-top:1.5rem;padding-bottom:3rem}
 
 /* ---------- buttons & fields ---------- */
 .btn{font:inherit;font-weight:600;min-height:2.75rem;padding:.5rem 1rem;border:2px solid var(--edge);background:var(--paper);color:var(--ink);border-radius:var(--radius);cursor:pointer}
 .btn:hover{border-color:var(--ink);background:var(--wash)}
-.btn[disabled]{color:#5C6B70;border-color:#B9C4C0;background:var(--wash);cursor:not-allowed}
-.btn.primary{background:var(--brand);border-color:var(--brand);color:#fff}
-.btn.primary:hover{background:var(--brand-hover);border-color:var(--brand-hover)}
-.btn.toggle[aria-pressed="true"]{background:var(--brand);border-color:var(--brand);color:#fff}
+.btn[disabled]{color:var(--disabled-ink);border-color:var(--disabled-edge);background:var(--wash);cursor:not-allowed}
+.btn.primary{background:var(--primary);border-color:var(--primary);color:var(--on-primary)}
+.btn.primary:hover{background:var(--primary-hover);border-color:var(--primary-hover)}
+.btn.toggle[aria-pressed="true"]{background:var(--primary);border-color:var(--primary);color:var(--on-primary)}
 .btn.quiet{border-color:transparent;text-decoration:underline;padding:.5rem .5rem;min-height:2.5rem}
 .btn.quiet:hover{background:var(--wash);border-color:transparent}
 select{font:inherit;min-height:2.75rem;padding:.4rem 2rem .4rem .6rem;border:2px solid var(--edge);border-radius:var(--radius);background:var(--paper);color:var(--ink);max-width:100%}
@@ -74,7 +136,7 @@ label{font-weight:600}
 .card{border:2px solid var(--edge);border-radius:var(--radius);padding:1.25rem;background:var(--paper)}
 .card h2{font-size:1.25rem;margin-bottom:.75rem}
 .drop{display:flex;flex-wrap:wrap;align-items:center;gap:1rem;padding:1.25rem;border:2px dashed var(--edge);border-radius:var(--radius);background:var(--wash)}
-.drop.over{border-style:solid;border-color:var(--brand);background:#E2EFE7}
+.drop.over{border-style:solid;border-color:var(--primary);background:var(--drop-over)}
 .drop p{flex:1 1 16rem}
 #privacy{margin-top:.75rem;max-width:80ch}
 .status{margin-top:.75rem;min-height:1.5rem;font-weight:600}
@@ -102,7 +164,7 @@ fieldset.pg{margin:.75rem 0 0;padding:.4rem .75rem .6rem;border:1px solid var(--
 .pgrow{display:flex;flex-wrap:wrap;align-items:center;gap:.1rem 1.5rem}
 fieldset.pg legend{padding:0 .4rem;font-weight:700}
 .ec{display:flex;gap:.55rem;align-items:flex-start;padding:.35rem .25rem;min-height:2.5rem;cursor:pointer;font-weight:400}
-.ec input{flex:none;width:1.4rem;height:1.4rem;margin:.1rem 0 0;accent-color:var(--brand)}
+.ec input{flex:none;width:1.4rem;height:1.4rem;margin:.1rem 0 0;accent-color:var(--primary)}
 .ec .mk{margin-top:.3rem}
 .ec .txt{overflow-wrap:break-word;min-width:0}
 .ec .cnt{margin-left:.4rem;font-size:.9375rem;color:var(--muted)}
@@ -129,14 +191,14 @@ fieldset.pg legend .src{font-weight:400;color:var(--muted);margin-left:.35rem}
 
 /* ---------- calendar ---------- */
 .cal{width:100%;border-collapse:collapse;table-layout:fixed}
-.cal th{background:var(--brand);color:#fff;text-align:left;padding:.5rem .6rem;font-size:.9375rem;border:1px solid var(--brand)}
+.cal th{background:var(--brand);color:var(--on-brand);text-align:left;padding:.5rem .6rem;font-size:.9375rem;border:1px solid var(--brand)}
 .cal td{vertical-align:top;border:1px solid var(--edge);padding:.4rem;height:7rem}
 .cal td.pad{background:var(--wash);border-color:var(--line)}
-.cal td.today{outline:3px solid var(--brand);outline-offset:-3px}
+.cal td.today{outline:3px solid var(--today);outline-offset:-3px}
 .dh{display:flex;align-items:center;gap:.4rem;margin-bottom:.3rem}
 .num{font-weight:700;font-size:1.0625rem}
 .dlong{display:none;font-weight:700}
-.tbadge{font-size:.8125rem;font-weight:700;background:var(--brand);color:#fff;padding:.05rem .45rem;border-radius:999px}
+.tbadge{font-size:.8125rem;font-weight:700;background:var(--today);color:var(--on-primary);padding:.05rem .45rem;border-radius:999px}
 .evts{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:.35rem}
 .evt{display:block;background:var(--t);border:1px solid var(--c);border-left:6px solid var(--c);border-radius:4px;padding:.3rem .45rem;overflow-wrap:break-word;min-width:0}
 .evt .en{display:flex;gap:.35rem;align-items:flex-start;font-weight:700;font-size:.875rem;line-height:1.25}
@@ -174,12 +236,12 @@ fieldset.pg legend .src{font-weight:400;color:var(--muted);margin-left:.35rem}
 .list{width:100%;border-collapse:collapse;min-width:42rem}
 .list caption{text-align:left;font-weight:700;padding:.6rem .75rem;background:var(--wash);border-bottom:1px solid var(--edge)}
 .list th,.list td{padding:.55rem .75rem;text-align:left;vertical-align:top;border-bottom:1px solid var(--line)}
-.list thead th{background:var(--brand);color:#fff;border-bottom:0}
+.list thead th{background:var(--brand);color:var(--on-brand);border-bottom:0}
 .list tbody th{font-weight:700;white-space:nowrap}
 .list td.time{white-space:nowrap;font-variant-numeric:tabular-nums;font-weight:600}
 .list .en{display:inline-flex;gap:.4rem;align-items:flex-start;font-weight:700}
 .list .en .mk{margin-top:.3rem}
-.list tr.evrow td:first-of-type,.list tr.evrow th{border-left:6px solid var(--c)}
+.list tr.evrow th{border-left:6px solid var(--c)}
 .list .note{display:block;font-size:.875rem;font-style:italic;color:var(--muted)}
 
 .help{margin-top:1rem}
@@ -193,7 +255,7 @@ fieldset.pg legend .src{font-weight:400;color:var(--muted);margin-left:.35rem}
   .btn.toggle[aria-pressed="true"]{outline:2px solid Highlight}
 }
 @media print{
-  .top,.skip,#upload,#notesBox,.panel,.toolbar .tools,.nav .btn,.help,.panel-actions,#emptyMsg,.count,.outbar,.outhint{display:none!important}
+  .top,.skip,.theme,#upload,#notesBox,.panel,.toolbar .tools,.nav .btn,.help,.panel-actions,#emptyMsg,.count,.outbar,.outhint{display:none!important}
   main.wrap{padding:0}
   .layout{display:block;margin:0}
   .cal td{height:auto;break-inside:avoid}
@@ -225,8 +287,14 @@ fieldset.pg legend .src{font-weight:400;color:var(--muted);margin-left:.35rem}
 
 <header class="top">
   <div class="wrap">
-    <h1>Field permit calendar</h1>
-    <p class="lede">Add Rec &amp; Parks permits and school-system reservation confirmations to see every booking by date, field and event.</p>
+    <div>
+      <h1>Field Permit Calendar Conversion Tool</h1>
+      <p class="lede">Upload your HCRP or HCPSS permits to see every booking by date, field and event in a downloadable calendar view.</p>
+    </div>
+    <button type="button" class="theme" id="themeBtn" aria-pressed="false">
+      <span class="track" aria-hidden="true"><span class="knob"></span></span>
+      <span>Dark mode</span>
+    </button>
   </div>
 </header>
 
@@ -235,11 +303,11 @@ fieldset.pg legend .src{font-weight:400;color:var(--muted);margin-left:.35rem}
   <section class="card" id="upload" aria-labelledby="addH">
     <h2 id="addH">Add permits</h2>
     <div class="drop" id="drop">
-      <p id="dropHelp">Drop PDF files here, or choose them from your computer. You can add several at once, and mix Rec &amp; Parks permits (ActiveNet) with school-system reservations (EMS). Each file is recognized automatically.</p>
+      <p id="dropHelp">Drop PDF files here, or choose them from your computer. You can add several at once and mix HCRP (Howard County Recreation and Parks) permits from ActiveNet with HCPSS (Howard County Public School System) reservations from EMS. Each file is recognized automatically.</p>
       <button type="button" class="btn primary" id="chooseBtn" aria-describedby="dropHelp privacy">Choose permit PDFs</button>
       <input type="file" id="fileInput" accept="application/pdf,.pdf" multiple hidden>
     </div>
-    <p id="privacy" class="small">Your files are read inside this browser window. Nothing is uploaded or saved. Only event names, fields, dates and times are used; contact details and payment information are ignored.</p>
+    <p id="privacy" class="small">Your files are read inside this browser window and are never uploaded or saved. Only event names, fields, dates and times are used; contact details and payment information are ignored.</p>
     <div id="status" class="status" role="status" aria-live="polite"></div>
     <div id="alerts" class="alerts" role="alert"></div>
   </section>
@@ -307,8 +375,8 @@ fieldset.pg legend .src{font-weight:400;color:var(--muted);margin-left:.35rem}
 
         <details class="help">
           <summary>How this calendar reads permits</summary>
-          <p>Rec &amp; Parks permits: repeating bookings such as "every Sunday" are expanded into individual dates, and dates listed as exceptions are left out. Each permit states how many bookings every event has; if the number found here is different, a note appears above the calendar. Only approved permits are shown.</p>
-          <p>School-system reservations: every booking is listed under its date. Only confirmed bookings are shown; any others are named in a note. If a listed date has no booking that could be read, a note says so.</p>
+          <p>HCRP permits: repeating bookings such as "every Sunday" are expanded into individual dates, and dates listed as exceptions are left out. Each permit states how many bookings every event has; if the number found here is different, a note appears above the calendar. Only approved permits are shown.</p>
+          <p>HCPSS reservations: every booking is listed under its date. Only confirmed bookings are shown; any others are named in a note. If a listed date has no booking that could be read, a note says so.</p>
           <p>On small screens the calendar lists only the days that have bookings.</p>
         </details>
       </section>
@@ -1053,8 +1121,8 @@ const PDF_EVENT_COLORS = [
   ['#A3194F', '#FCE4EE'], ['#7A5900', '#FBF0C9'], ['#3E4C59', '#E6EAEE'], ['#4F6B0A', '#EBF3D2'], ['#B3261E', '#FDE4E2']
 ].map(([s, t]) => [hexToRgb(s), hexToRgb(t)]);
 const PDF_C = {
-  ink: hexToRgb('#14232A'), muted: hexToRgb('#44555B'), brand: hexToRgb('#14532D'), edge: hexToRgb('#6B7C80'),
-  line: hexToRgb('#C9D3CF'), wash: hexToRgb('#F1F5F2'), zebra: hexToRgb('#F7F9F8'), white: [1, 1, 1]
+  ink: hexToRgb('#102A33'), muted: hexToRgb('#43575E'), brand: hexToRgb('#024860'), accent: hexToRgb('#ACD03A'), edge: hexToRgb('#677C83'),
+  line: hexToRgb('#C6D4D8'), wash: hexToRgb('#EDF3F5'), zebra: hexToRgb('#F6F9FA'), white: [1, 1, 1]
 };
 const PDF_L = {
   W: 792, H: 612, M: 36, TOP: 36, BOTTOM: 612 - 42,
@@ -1075,7 +1143,7 @@ async function buildCalendarPdf(opts) {
   const { pieces, months, fmt, fonts, eventOrder = [], filterNote = '' } = opts;
   const L = PDF_L, C = PDF_C;
   const span = months.length === 1 ? monthName(months[0]) : `${monthName(months[0])} to ${monthName(months[months.length - 1])}`;
-  const title = `Field permit calendar, ${span}`;
+  const title = `Field Permit Calendar, ${span}`;
   const doc = new PdfDoc({ title, lang: 'en-US', fonts });
   const created = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
   const inRange = pieces.filter(b => months.includes(b.date.slice(0, 7))).sort(sortPieces);
@@ -1092,9 +1160,9 @@ async function buildCalendarPdf(opts) {
   /* ---------------- title block, top of page 1 ---------------- */
   let page = newPage();
   let y = L.TOP;
-  page.artifact(() => page.rect(L.M, y - 14, usable, 3, { fill: C.brand }));
+  page.artifact(() => (page.rect(L.M, y - 16, usable, 3.5, { fill: C.brand }), page.rect(L.M, y - 12.5, usable, 2, { fill: C.accent })));
   const h1 = doc.elem('H1');
-  page.tag(h1, () => page.text('Field permit calendar', L.M, y + 14, { font: 'bold', size: 18, color: C.brand }));
+  page.tag(h1, () => page.text('Field Permit Calendar', L.M, y + 14, { font: 'bold', size: 18, color: C.brand }));
   y += 30;
   const bookingCount = inRange.filter(b => b.span === 'only' || b.span === 'first').length;
   const facts = [
@@ -1186,7 +1254,7 @@ async function buildCalendarPdf(opts) {
       if (!samePage) {
         page = newPage();
         y = L.TOP;
-        page.artifact(() => page.rect(L.M, y - 14, usable, 3, { fill: C.brand }));
+        page.artifact(() => (page.rect(L.M, y - 16, usable, 3.5, { fill: C.brand }), page.rect(L.M, y - 12.5, usable, 2, { fill: C.accent })));
       }
       if (!continued) {
         page.tag(h2m, () => page.text(monthName(ym), L.M, y + 18, { font: 'bold', size: 20, color: C.brand }));
@@ -1319,7 +1387,7 @@ async function buildCalendarPdf(opts) {
       if (y + rowH > L.BOTTOM) {
         page = newPage(); y = L.TOP;
         page.artifact(() => {
-          page.rect(L.M, y - 14, usable, 3, { fill: C.brand });
+          (page.rect(L.M, y - 16, usable, 3.5, { fill: C.brand }), page.rect(L.M, y - 12.5, usable, 2, { fill: C.accent }));
           page.text('Events in this calendar (continued)', L.M, y + 10, { font: 'bold', size: 13, color: C.brand });
         });
         y += 20;
@@ -1352,7 +1420,7 @@ async function buildCalendarPdf(opts) {
   pages.forEach((p, i) => p.artifact(() => {
     const right = `Page ${i + 1} of ${pages.length}`;
     p.line(L.M, L.H - 30, L.M + usable, L.H - 30, C.line, 0.6);
-    p.text(`Field permit calendar · ${span} · Created ${created}`, L.M, L.H - 19, { size: 7.5, color: C.muted });
+    p.text(`Field Permit Calendar · ${span} · Created ${created}`, L.M, L.H - 19, { size: 7.5, color: C.muted });
     p.text(right, L.M + usable - doc.width(right, 'regular', 7.5), L.H - 19, { size: 7.5, color: C.muted });
   }, 'Pagination'));
 
@@ -1368,8 +1436,8 @@ async function buildCalendarPdf(opts) {
 const APPROVED_ONLY = true;      // true: Rec & Parks permits whose status is not "Approved" are not shown
 const PALETTE = 10;              // number of colors defined in the stylesheet (c0..c9)
 const SOURCES = {                // how each permit system is named on screen and in files
-  activenet: { noun: 'permit', label: id => `Permit ${id}`, name: 'Rec & Parks' },
-  ems: { noun: 'reservation', label: id => `Reservation ${id}`, name: 'School system' }
+  activenet: { noun: 'permit', label: id => `Permit ${id}`, name: 'HCRP' },
+  ems: { noun: 'reservation', label: id => `Reservation ${id}`, name: 'HCPSS' }
 };
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -1403,6 +1471,8 @@ function locationOf(b) {
   const r = b.resource, v = b.venue || '';
   return v && !r.toLowerCase().includes(v.toLowerCase()) ? `${r}, ${v}` : r;
 }
+/* A time range in the format chosen on screen, as plain text */
+const rangeText = b => state.fmt === '12' ? `${t12(b.start)} – ${t12(b.end)}` : `${b.start}–${b.end}`;
 const NOTE_TEXT = { first: 'Continues into the next day', middle: 'All day', last: 'Continued from the previous day' };
 
 /* ============================================================
@@ -1500,7 +1570,7 @@ function nextStyle() {
 
 function ingest(parsed, fileName) {
   if (!parsed.source) {
-    state.uploadNotes.push(`${fileName} was not recognized as a Rec & Parks permit or a school-system reservation confirmation. If it is one, it may be a scan or photo instead of the PDF the system produces.`);
+    state.uploadNotes.push(`${fileName} was not recognized as an HCRP permit or an HCPSS reservation confirmation. If it is one, it may be a scan or photo instead of the PDF the system produces.`);
     return false;
   }
   const src = SOURCES[parsed.source];
@@ -1583,7 +1653,7 @@ function findOverlaps() {
     for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length; j++) {
       const a = list[i], b = list[j];
       if (toMin(a.start) < toMin(b.end) && toMin(b.start) < toMin(a.end)) {
-        out.push(`${a.loc} on ${longDate(a.date)}: ${a.event} (${a.start}–${a.end}, ${a.permitLabel}) overlaps ${b.event} (${b.start}–${b.end}, ${b.permitLabel}).`);
+        out.push(`${a.loc} on ${longDate(a.date)}: ${a.event} (${rangeText(a)}, ${a.permitLabel}) overlaps ${b.event} (${rangeText(b)}, ${b.permitLabel}).`);
       }
     }
   });
@@ -1597,7 +1667,7 @@ const els = {};
 function bindEls() {
   ['status', 'alerts', 'results', 'emptyMsg', 'notesBox', 'notesList', 'groups', 'eventsH', 'showAllBtn', 'clearBtn',
    'prevBtn', 'nextBtn', 'monthTitle', 'monthSel', 'viewCal', 'viewList', 'fmtSel', 'locSel', 'countLine', 'view',
-   'skip', 'drop', 'panel', 'evSummary', 'pdfMonthBtn', 'pdfAllBtn', 'csvBtn', 'fileInput', 'chooseBtn'].forEach(id => { els[id] = document.getElementById(id); });
+   'skip', 'drop', 'panel', 'evSummary', 'themeBtn', 'pdfMonthBtn', 'pdfAllBtn', 'csvBtn', 'fileInput', 'chooseBtn'].forEach(id => { els[id] = document.getElementById(id); });
 }
 function say(msg) { els.status.textContent = ''; setTimeout(() => { els.status.textContent = msg; }, 30); }
 
@@ -1839,8 +1909,30 @@ async function handleFiles(fileList) {
     : 'No permits were added. See the notes below.');
 }
 
+/* ---------- light and dark ---------- */
+function applyTheme(theme, remember) {
+  document.documentElement.setAttribute('data-theme', theme);
+  els.themeBtn.setAttribute('aria-pressed', String(theme === 'dark'));
+  if (remember) { try { localStorage.setItem('fpc-theme', theme); } catch (e) { /* private window: the choice lasts this visit */ } }
+}
+function initTheme() {
+  applyTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light', false);
+  els.themeBtn.addEventListener('click', () => {
+    const dark = els.themeBtn.getAttribute('aria-pressed') !== 'true';
+    applyTheme(dark ? 'dark' : 'light', true);
+    say(dark ? 'Dark mode on.' : 'Dark mode off.');
+  });
+  /* until someone picks, follow the device setting as it changes */
+  if (window.matchMedia) {
+    const mq = matchMedia('(prefers-color-scheme: dark)');
+    const follow = e => { let saved = null; try { saved = localStorage.getItem('fpc-theme'); } catch (err) {} if (!saved) applyTheme(e.matches ? 'dark' : 'light', false); };
+    if (mq.addEventListener) mq.addEventListener('change', follow);
+  }
+}
+
 function init() {
   bindEls();
+  initTheme();
   els.chooseBtn.addEventListener('click', () => els.fileInput.click());
   els.fileInput.addEventListener('change', e => { if (e.target.files.length) handleFiles(e.target.files); });
 
@@ -1883,7 +1975,7 @@ function init() {
   els.nextBtn.addEventListener('click', () => step(1));
   els.monthSel.addEventListener('change', () => { state.month = els.monthSel.value; renderView(); say(els.countLine.textContent); });
   els.locSel.addEventListener('change', () => { state.location = els.locSel.value; renderView(); say(els.countLine.textContent); });
-  els.fmtSel.addEventListener('change', () => { state.fmt = els.fmtSel.value; renderView(); say(state.fmt === '12' ? 'Times shown in 12-hour format.' : 'Times shown in 24-hour format.'); });
+  els.fmtSel.addEventListener('change', () => { state.fmt = els.fmtSel.value; renderNotes(); renderView(); say(state.fmt === '12' ? 'Times shown in 12-hour format.' : 'Times shown in 24-hour format.'); });
   els.viewCal.addEventListener('click', () => { state.view = 'calendar'; renderView(); say('Calendar view.'); });
   els.viewList.addEventListener('click', () => { state.view = 'list'; renderView(); say('List view.'); });
 
