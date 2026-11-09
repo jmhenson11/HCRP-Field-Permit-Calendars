@@ -512,6 +512,12 @@ function expandSeries(s) {
     if (s.exceptions.has(ymd)) continue;
     out.push(ymd);
   }
+  /* When the permit lists the series date by date, the list is the schedule: a date the rule would
+     produce but the list leaves out was cancelled, even if no "Exception:" line says so. */
+  if (s.itemized && s.itemized.size) {
+    const listed = out.filter(d => s.itemized.has(d));
+    if (listed.length) return listed;
+  }
   return out;
 }
 
@@ -588,7 +594,7 @@ function parseActiveNetLines(lines) {
       }
       lastSeries = {
         resource, venue, first, last, days: rec.days, interval: rec.weekInterval, dayStep: rec.dayStep,
-        start: to24(h1, mi1, ap1), end: to24(h2, mi2, ap2), exceptions: new Set(), pattern
+        start: to24(h1, mi1, ap1), end: to24(h2, mi2, ap2), exceptions: new Set(), itemized: new Set(), pattern
       };
       ev.series.push(lastSeries);
       pendingSeries = null;
@@ -616,7 +622,12 @@ function parseActiveNetLines(lines) {
       const endDate = isoDate(y2, monthNum(mo2), +d2);
       const start = to24(h1, mi1, ap1), end = to24(h2, mi2, ap2);
       addUnit(ev, { resource, venue, date, endDate, start, end }, out.notes);
-      if (lastSeries && lastSeries.selected && lastSeries.resource === resource) lastSeries.listed++;
+      if (lastSeries && lastSeries.resource === resource) {
+        if (lastSeries.selected) lastSeries.listed++;
+        /* A row on one of the rule's own dates at the rule's own times means the permit is listing the
+           series date by date. Rows at other times are changes (moved or extra bookings) and are not counted. */
+        else if (start === lastSeries.start && end === lastSeries.end) lastSeries.itemized.add(date);
+      }
       return;
     }
 
